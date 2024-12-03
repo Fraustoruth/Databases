@@ -11,6 +11,7 @@ import edu.berkeley.cs186.database.io.DiskSpaceManager;
 import edu.berkeley.cs186.database.memory.BufferManager;
 import edu.berkeley.cs186.database.table.RecordId;
 
+import javax.xml.crypto.Data;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -145,9 +146,8 @@ public class BPlusTree {
         // TODO(proj4_integration): Update the following line
         LockUtil.ensureSufficientLockHeld(lockContext, LockType.NL);
 
-        // TODO(proj2): implement
-
-        return Optional.empty();
+        LeafNode leaf = root.get(key);
+        return leaf.getKey(key);
     }
 
     /**
@@ -201,9 +201,10 @@ public class BPlusTree {
         // TODO(proj4_integration): Update the following line
         LockUtil.ensureSufficientLockHeld(lockContext, LockType.NL);
 
-        // TODO(proj2): Return a BPlusTreeIterator.
-
-        return Collections.emptyIterator();
+        LockUtil.ensureSufficientLockHeld(lockContext, LockType.NL);
+        LeafNode leftMost = root.getLeftmostLeaf();
+        Iterator<RecordId> iterator = leftMost.scanAll();
+        return new BPlusTreeIterator(leftMost , iterator);
     }
 
     /**
@@ -234,9 +235,9 @@ public class BPlusTree {
         // TODO(proj4_integration): Update the following line
         LockUtil.ensureSufficientLockHeld(lockContext, LockType.NL);
 
-        // TODO(proj2): Return a BPlusTreeIterator.
-
-        return Collections.emptyIterator();
+        LeafNode leaf = root.get(key);
+        Iterator<RecordId> iterator = leaf.scanGreaterEqual(key);
+        return new BPlusTreeIterator(leaf, iterator);
     }
 
     /**
@@ -253,11 +254,30 @@ public class BPlusTree {
         // TODO(proj4_integration): Update the following line
         LockUtil.ensureSufficientLockHeld(lockContext, LockType.NL);
 
-        // TODO(proj2): implement
         // Note: You should NOT update the root variable directly.
         // Use the provided updateRoot() helper method to change
         // the tree's root if the old root splits.
 
+        Optional<Pair<DataBox, Long>> InfoToSplit = root.put(key, rid);
+        if (InfoToSplit.isPresent()) {
+            //if overflow, return a pair of split_key and right_node_page_num
+            //note the difference between innerNode/leafNode overflow
+            Pair<DataBox, Long> pair = InfoToSplit.get();
+            DataBox rootkey = pair.getFirst();
+            Long rightChild = pair.getSecond();
+
+            List<DataBox> keys = new ArrayList<>();
+            List<Long> children = new ArrayList<>();
+
+            //adding key of new root
+            keys.add(rootkey);
+            //adding children
+            children.add(this.root.getPage().getPageNum());
+            children.add(rightChild);
+            InnerNode innerNode = new InnerNode(metadata, bufferManager, keys,children, lockContext);
+            //updating root
+            updateRoot(innerNode);
+        }
         return;
     }
 
@@ -282,11 +302,37 @@ public class BPlusTree {
         // TODO(proj4_integration): Update the following line
         LockUtil.ensureSufficientLockHeld(lockContext, LockType.NL);
 
-        // TODO(proj2): implement
         // Note: You should NOT update the root variable directly.
         // Use the provided updateRoot() helper method to change
         // the tree's root if the old root splits.
+        if (root instanceof LeafNode) {
+            if (((LeafNode) root).getKeys().size() != 0) {
+                throw new BPlusTreeException("Tree is not empty");
+            }
+        }
+        while (data.hasNext()) {
+            Optional<Pair<DataBox, Long>> InfoToSplit = root.bulkLoad(data, fillFactor);
+            if (InfoToSplit.isPresent()) {
+                //if overflow, return a pair of split_key and right_node_page_num
+                //note the difference between innerNode/leafNode overflow
+                Pair<DataBox, Long> pair = InfoToSplit.get();
+                DataBox rootKey = pair.getFirst();
+                Long rightChild = pair.getSecond();
 
+                List<DataBox> keys = new ArrayList<>();
+                List<Long> children = new ArrayList<>();
+
+                //adding key of new root
+                keys.add(rootKey);
+                //adding children
+                children.add(this.root.getPage().getPageNum());
+                children.add(rightChild);
+                InnerNode innerNode = new InnerNode(metadata, bufferManager, keys, children, lockContext);
+                //updating root
+                updateRoot(innerNode);
+            }
+
+        }
         return;
     }
 
@@ -306,7 +352,7 @@ public class BPlusTree {
         // TODO(proj4_integration): Update the following line
         LockUtil.ensureSufficientLockHeld(lockContext, LockType.NL);
 
-        // TODO(proj2): implement
+        root.remove(key);
 
         return;
     }
@@ -422,18 +468,53 @@ public class BPlusTree {
     private class BPlusTreeIterator implements Iterator<RecordId> {
         // TODO(proj2): Add whatever fields and constructors you want here.
 
+        private LeafNode leaf;
+        private Iterator<RecordId> iterator;
+        private boolean siblingPresent;
+        //constructor
+        public BPlusTreeIterator(LeafNode leaf, Iterator<RecordId> iterator) {
+            this.leaf = leaf;
+            this.iterator = iterator;
+            this.siblingPresent = true;
+            if (checkEmptyPage()) {
+                move();
+            }
+        }
+
         @Override
         public boolean hasNext() {
-            // TODO(proj2): implement
-
-            return false;
+            return siblingPresent;
         }
 
         @Override
         public RecordId next() {
-            // TODO(proj2): implement
-
+            if (hasNext()) {
+                RecordId rid = iterator.next();
+                if (!iterator.hasNext()) {
+                    move();
+                }
+                return rid;
+            }
             throw new NoSuchElementException();
+        }
+
+        private boolean checkEmptyPage() {
+            return iterator == null;
+        }
+
+        //checks the case when the keys in the leaf have been deleted, then moves to a leaf not null
+        private void move() {
+            Optional<LeafNode> sibling = leaf.getRightSibling();
+            if (!sibling.isPresent()) {
+                siblingPresent = false;
+                return;
+            }
+            leaf = sibling.get();
+            iterator = leaf.scanAll();
+            if (checkEmptyPage()) {
+                move();
+            }
+            return;
         }
     }
 }
