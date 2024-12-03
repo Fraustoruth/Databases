@@ -22,33 +22,40 @@ public enum LockType {
         if (a == null || b == null) {
             throw new NullPointerException("null lock type");
         }
-        if (a == NL) {
+//        if (a == NL) {
+//            return true;
+//        }
+//        if (a == IS) {
+//            if (b == IS || b == IX || b == S || b == NL || b == SIX) {
+//                return true;
+//            } return false;
+//        }
+//        if (a == IX) {
+//            if (b == IS || b == IX || b == NL) {
+//                return true;
+//            } return false;
+//        }
+//        if (a == S) {
+//            if (b == IS || b == S || b == NL) {
+//                return true;
+//            } return false;
+//        }
+//        if (a == SIX) {
+//            if (b == IS || b == NL) {
+//                return true;
+//            } return false;
+//        }
+//        if (a == X) {
+//            if (b == NL) {
+//                return true;
+//            }
+//        }
+        if (a == NL || b == NL) {
             return true;
-        }
-        if (a == IS) {
-            if (b == IS || b == IX || b == S || b == NL || b == SIX) {
-                return true;
-            } return false;
-        }
-        if (a == IX) {
-            if (b == IS || b == IX || b == NL) {
-                return true;
-            } return false;
-        }
-        if (a == S) {
-            if (b == IS || b == S || b == NL) {
-                return true;
-            } return false;
-        }
-        if (a == SIX) {
-            if (b == IS || b == NL) {
-                return true;
-            } return false;
-        }
-        if (a == X) {
-            if (b == NL) {
-                return true;
-            }
+        } else if ((a == IS && b != X) || (b == IS && a != X)) {
+            return true;
+        } else if ((a == IX && b == IX) || (a == S && b == S)) {
+            return true;
         }
         return false;
     }
@@ -81,9 +88,15 @@ public enum LockType {
             throw new NullPointerException("null lock type");
         }
         if (parentLockType == NL && childLockType == NL) return true;
+//        if (childLockType == NL) return true;
+//        if (parentLockType == IX) return true;
+//        if (parentLock(childLockType) == parentLockType) return true;
+//        return false;
+        //if (parentLockType == NL) return true;
         if (childLockType == NL) return true;
         if (parentLockType == IX) return true;
-        if (parentLock(childLockType) == parentLockType) return true;
+        if (parentLockType == IS && (childLockType == S || childLockType == IS)) return true;
+        if (parentLockType == SIX && (childLockType == IX || childLockType == SIX || childLockType == X)) return true;
         return false;
     }
 
@@ -97,22 +110,11 @@ public enum LockType {
         if (required == null || substitute == null) {
             throw new NullPointerException("null lock type");
         }
-        //only NL can be substituted for NL, o/w false
-        if (required == NL && substitute == NL) return true;
-        //no change
         if (substitute == required) return true;
-        //IX's privileges are a superset of IS's privileges
-        if (required == IS && substitute == IX) return true;
-        //S can be substituted by S, SIX, or X and not (IS or IX)
-        if (required == S) {
-            if ((substitute == X) | (substitute == S) | (substitute == SIX)) {
-                return true;
-            } else return false;
-        }
-        //X can only be substituted by X
-        if (substitute == X && required == X) {
-            return true;
-        }
+        if (required == NL) return true;
+        if (substitute == SIX && (required == S || required == IS || required == IX)) return true;
+        if (substitute == X && (required == S || required == SIX || required == IX)) return true;
+        if (substitute == IX && required == IS) return true;
         return false;
     }
 
