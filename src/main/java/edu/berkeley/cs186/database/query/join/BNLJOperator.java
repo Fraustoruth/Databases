@@ -84,9 +84,16 @@ public class BNLJOperator extends JoinOperator {
          * do nothing.
          *
          * You may find QueryOperator#getBlockIterator useful here.
+         * Make sure you pass in the correct schema to this method.
          */
+
         private void fetchNextLeftBlock() {
-            // TODO(proj3_part1): implement
+
+            leftBlockIterator = getBlockIterator(leftSourceIterator, getLeftSource().getSchema(), numBuffers - 2);
+            leftBlockIterator.markNext();
+            if (leftBlockIterator.hasNext()) {
+                leftRecord = leftBlockIterator.next();
+            }
         }
 
         /**
@@ -98,9 +105,11 @@ public class BNLJOperator extends JoinOperator {
          * do nothing.
          *
          * You may find QueryOperator#getBlockIterator useful here.
+         * Make sure you pass in the correct schema to this method.
          */
         private void fetchNextRightPage() {
-            // TODO(proj3_part1): implement
+            rightPageIterator = getBlockIterator(rightSourceIterator, getRightSource().getSchema(), 1);
+            rightPageIterator.markNext();
         }
 
         /**
@@ -111,8 +120,51 @@ public class BNLJOperator extends JoinOperator {
          * function directly from this file, since BNLJOperator is a subclass
          * of JoinOperator).
          */
+
+        /**
+         * The fetchNextRecord method should, as its name suggests, fetches the next
+         * record of the join output. When implementing this method there are 4 important
+         * cases you should consider:
+         *
+         * Case 1: The right page iterator has a value to yield
+         * Case 2: The right page iterator doesn't have a value to yield but the left block iterator does
+         * Case 3: Neither the right page nor left block iterators have values to yield, but there's more right pages
+         * Case 4: Neither right page nor left block iterators have values nor are there more right pages, but there are still left blocks
+         *
+         */
         private Record fetchNextRecord() {
-            // TODO(proj3_part1): implement
+
+            Record nextRecord = null;
+            Record rightRecord = rightPageIterator.hasNext() ? rightPageIterator.next() : null;
+
+            while (rightRecord != null || leftRecord != null) {
+                if (rightRecord != null) { //CASE 1
+                    nextRecord = compare(leftRecord, rightRecord) == 0 ? leftRecord.concat(rightRecord) : null; //look for a match
+                    if (nextRecord != null) { return nextRecord;} //return match
+                    rightRecord = rightPageIterator.hasNext() ? rightPageIterator.next() : null; //else, move to the next right record
+                } else if (leftBlockIterator.hasNext()) { //CASE: reset right iterator, get next left value, and set new right value
+                    rightPageIterator.reset();
+                    rightPageIterator.markNext();
+                    rightRecord = rightPageIterator.next();
+                    leftRecord = leftBlockIterator.next();
+                } else if (rightSourceIterator.hasNext()){ // CASE 3: reset left block iterator, fetch new right page
+                    leftBlockIterator.reset();
+                    leftBlockIterator.markNext();
+                    leftRecord = leftBlockIterator.next();
+                    fetchNextRightPage();
+                    rightPageIterator.markNext();
+                    rightRecord = rightPageIterator.next();
+                } else if (leftSourceIterator.hasNext()) { //CASE 4: start at the top of right source, fetch new left block
+                    fetchNextLeftBlock();
+                    rightSourceIterator.reset();
+                    rightSourceIterator.markNext();
+                    fetchNextRightPage();
+                    rightPageIterator.markNext();
+                    rightRecord = rightPageIterator.next();
+                } else {
+                    break;
+                }
+            }
             return null;
         }
 
