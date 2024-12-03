@@ -2,6 +2,7 @@ package edu.berkeley.cs186.database.query.join;
 
 import edu.berkeley.cs186.database.TransactionContext;
 import edu.berkeley.cs186.database.common.iterator.BacktrackingIterator;
+import edu.berkeley.cs186.database.databox.DataBox;
 import edu.berkeley.cs186.database.query.JoinOperator;
 import edu.berkeley.cs186.database.query.MaterializeOperator;
 import edu.berkeley.cs186.database.query.QueryOperator;
@@ -139,8 +140,33 @@ public class SortMergeOperator extends JoinOperator {
          * or null if there are no more records to join.
          */
         private Record fetchNextRecord() {
-            // TODO(proj3_part1): implement
-            return null;
+            if (leftRecord == null) {
+                return null;
+            }
+            if (rightRecord != null) {
+                if (compare(leftRecord, rightRecord) == 0) {
+                    return leftRecord.concat(rightRecord);
+                }
+            }
+            while (true) {
+                if (rightIterator.hasNext()) {
+                    rightRecord = rightIterator.next();
+                    if (compare(leftRecord, rightRecord) == 0) {
+                        Record s = leftRecord.concat(rightRecord);
+                        //rightRecord = rightIterator.next();
+                        leftRecord = leftIterator.next();
+                        return s;
+                    }
+                } else if (leftIterator.hasNext()) {
+                    leftRecord = leftIterator.next();
+                    rightIterator.reset();
+                    rightIterator.markNext();
+                    this.marked = true;
+                    //if (rightIterator.hasNext()) {rightRecord = rightIterator.next();}
+                } else {
+                    return null;
+                }
+            }
         }
 
         @Override
