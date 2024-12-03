@@ -1,5 +1,6 @@
 package edu.berkeley.cs186.database.concurrency;
 
+
 /**
  * Utility methods to track the relationships between different lock types.
  */
@@ -21,8 +22,34 @@ public enum LockType {
         if (a == null || b == null) {
             throw new NullPointerException("null lock type");
         }
-        // TODO(proj4_part1): implement
-
+        if (a == NL) {
+            return true;
+        }
+        if (a == IS) {
+            if (b == IS || b == IX || b == S || b == NL || b == SIX) {
+                return true;
+            } return false;
+        }
+        if (a == IX) {
+            if (b == IS || b == IX || b == NL) {
+                return true;
+            } return false;
+        }
+        if (a == S) {
+            if (b == IS || b == S || b == NL) {
+                return true;
+            } return false;
+        }
+        if (a == SIX) {
+            if (b == IS || b == NL) {
+                return true;
+            } return false;
+        }
+        if (a == X) {
+            if (b == NL) {
+                return true;
+            }
+        }
         return false;
     }
 
@@ -35,13 +62,13 @@ public enum LockType {
             throw new NullPointerException("null lock type");
         }
         switch (a) {
-        case S: return IS;
-        case X: return IX;
-        case IS: return IS;
-        case IX: return IX;
-        case SIX: return IX;
-        case NL: return NL;
-        default: throw new UnsupportedOperationException("bad lock type");
+            case S: return IS;
+            case X: return IX;
+            case IS: return IS;
+            case IX: return IX;
+            case SIX: return IX;
+            case NL: return NL;
+            default: throw new UnsupportedOperationException("bad lock type");
         }
     }
 
@@ -53,8 +80,10 @@ public enum LockType {
         if (parentLockType == null || childLockType == null) {
             throw new NullPointerException("null lock type");
         }
-        // TODO(proj4_part1): implement
-
+        if (parentLockType == NL && childLockType == NL) return true;
+        if (childLockType == NL) return true;
+        if (parentLockType == IX) return true;
+        if (parentLock(childLockType) == parentLockType) return true;
         return false;
     }
 
@@ -68,8 +97,22 @@ public enum LockType {
         if (required == null || substitute == null) {
             throw new NullPointerException("null lock type");
         }
-        // TODO(proj4_part1): implement
-
+        //only NL can be substituted for NL, o/w false
+        if (required == NL && substitute == NL) return true;
+        //no change
+        if (substitute == required) return true;
+        //IX's privileges are a superset of IS's privileges
+        if (required == IS && substitute == IX) return true;
+        //S can be substituted by S, SIX, or X and not (IS or IX)
+        if (required == S) {
+            if ((substitute == X) | (substitute == S) | (substitute == SIX)) {
+                return true;
+            } else return false;
+        }
+        //X can only be substituted by X
+        if (substitute == X && required == X) {
+            return true;
+        }
         return false;
     }
 
@@ -83,14 +126,13 @@ public enum LockType {
     @Override
     public String toString() {
         switch (this) {
-        case S: return "S";
-        case X: return "X";
-        case IS: return "IS";
-        case IX: return "IX";
-        case SIX: return "SIX";
-        case NL: return "NL";
-        default: throw new UnsupportedOperationException("bad lock type");
+            case S: return "S";
+            case X: return "X";
+            case IS: return "IS";
+            case IX: return "IX";
+            case SIX: return "SIX";
+            case NL: return "NL";
+            default: throw new UnsupportedOperationException("bad lock type");
         }
     }
 }
-
