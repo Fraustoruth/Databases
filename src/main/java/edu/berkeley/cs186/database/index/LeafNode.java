@@ -146,24 +146,53 @@ class LeafNode extends BPlusNode {
     // See BPlusNode.get.
     @Override
     public LeafNode get(DataBox key) {
-        // TODO(proj2): implement
-
-        return null;
+        return this;
     }
 
     // See BPlusNode.getLeftmostLeaf.
     @Override
     public LeafNode getLeftmostLeaf() {
-        // TODO(proj2): implement
-
-        return null;
+        return this;
     }
 
     // See BPlusNode.put.
     @Override
     public Optional<Pair<DataBox, Long>> put(DataBox key, RecordId rid) {
-        // TODO(proj2): implement
+        /**
+         * key already exists-raise an exception
+         * No overflow return Option.empty()
+         * If overflow-return a pair of split_key and right_node_page_num
+         * careful with copy/push keys
+         */
+        //STEP 1) check for duplicate keys
+        if (keys.contains(key)) {
+            throw new BPlusTreeException("Key already exists");
+        }
+        //STEP 2) else - insert key and recordID sorted
+        int index = InnerNode.numLessThanEqual(key, keys);
+        keys.add(index, key);
+        rids.add(index, rid);
 
+        //STEP 3) if #keys > 2d, split
+        int d = metadata.getOrder();
+        if (keys.size() > 2 * d) {
+
+            //STEP 4) assign keys and recordIDS to separate leaf nodes
+            List<DataBox> Lkeys = keys.subList(0,d);
+            List<RecordId> Lrids = rids.subList(0, d);
+            List<DataBox> Rkeys = keys.subList(d, 2 * d + 1);
+            List<RecordId> Rrids = rids.subList(d, 2 * d + 1);
+            LeafNode rightLeaf = new LeafNode(metadata, bufferManager, Rkeys, Rrids, rightSibling, treeContext);
+
+            this.keys = Lkeys;
+            this.rids = Lrids;
+            Long RSPN = rightLeaf.getPage().getPageNum();
+            this.rightSibling = Optional.of(RSPN);
+            Pair<DataBox,Long> s = new Pair<>(Rkeys.get(0), RSPN);
+            sync();
+            return Optional.of(s);
+        }
+        sync();
         return Optional.empty();
     }
 
@@ -171,16 +200,51 @@ class LeafNode extends BPlusNode {
     @Override
     public Optional<Pair<DataBox, Long>> bulkLoad(Iterator<Pair<DataBox, RecordId>> data,
             float fillFactor) {
-        // TODO(proj2): implement
+        if (!data.hasNext()) {
+            return Optional.empty();
+        }
 
-        return Optional.empty();
+        Pair<DataBox, RecordId> pair = data.next();
+        DataBox key = pair.getFirst();
+        RecordId rid = pair.getSecond();
+
+        //check if adding the value would exceed fillfactor
+        int d = metadata.getOrder();
+        int f = (int) Math.ceil(d * fillFactor * 2);
+
+        //do not modify exiting list
+        //create new right leafnode
+        if (keys.size() + 1 > f) {
+            List<DataBox> Rkeys = new ArrayList<>();
+            List<RecordId> Rrids = new ArrayList<>();
+            Rkeys.add(key);
+            Rrids.add(rid);
+            LeafNode rightLeaf = new LeafNode(metadata, bufferManager, Rkeys, Rrids, rightSibling, treeContext);
+            Long RSPN = rightLeaf.getPage().getPageNum();
+            this.rightSibling = Optional.of(RSPN);
+            Pair<DataBox,Long> s = new Pair<>(Rkeys.get(0), RSPN);
+            sync();
+            return Optional.of(s);
+        }
+        //[#, , , ]
+        //keep adding records until it reaches capacity or iterator !hasNext()
+        keys.add(key);
+        rids.add(rid);
+        sync();
+        return bulkLoad(data, fillFactor);
     }
 
     // See BPlusNode.remove.
     @Override
     public void remove(DataBox key) {
-        // TODO(proj2): implement
-
+        //check if we want to remove a non-existing record
+        if (!keys.contains(key)) {
+            return;
+        }
+        int i = keys.indexOf(key);
+        keys.remove(i);
+        rids.remove(i);
+        sync();
         return;
     }
 
@@ -376,8 +440,32 @@ class LeafNode extends BPlusNode {
         // Note: LeafNode has two constructors. To implement fromBytes be sure to
         // use the constructor that reuses an existing page instead of fetching a
         // brand new one.
+        /**
+         * This method reads a LeafNode from a page. For information on how a leaf node
+         * is serialized, see LeafNode::toBytes. For an example on how to read a node from disk,
+         * see InnerNode::fromBytes. Your code should be similar to the inner node version but
+         * should account for the differences between how inner nodes and leaf nodes are serialized.
+         */
 
-        return null;
+
+        Page page = bufferManager.fetchPage(treeContext, pageNum);
+        Buffer buf = page.getBuffer();
+
+        byte nodeType = buf.get();
+        assert(nodeType == (byte) 1);
+
+        List<DataBox> keys = new ArrayList<>();
+        List<RecordId> rids = new ArrayList<>();
+        Long sibNum = buf.getLong();
+
+        Optional<Long> rightSibling = sibNum == -1 ? Optional.empty() : Optional.of(sibNum);
+
+        int n = buf.getInt();
+        for (int i = 0; i < n; ++i) {
+            keys.add(DataBox.fromBytes(buf, metadata.getKeySchema()));
+            rids.add(RecordId.fromBytes(buf));
+        }
+        return new LeafNode(metadata, bufferManager, page, keys, rids, rightSibling, treeContext);
     }
 
     // Builtins ////////////////////////////////////////////////////////////////
