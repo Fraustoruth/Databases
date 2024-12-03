@@ -48,9 +48,9 @@ public class SortOperator extends QueryOperator {
     @Override
     public int estimateIOCost() {
         int N = getSource().estimateStats().getNumPages();
-        double pass0Runs = Math.ceil(N / numBuffers);
+        double pass0Runs = Math.ceil(N / (double)numBuffers);
         double numPasses = 1 + Math.ceil(Math.log(pass0Runs) / Math.log(numBuffers - 1));
-        return (int) (2 * N * numPasses);
+        return (int) (2 * N * numPasses) + getSource().estimateIOCost();
     }
 
     @Override
@@ -86,14 +86,19 @@ public class SortOperator extends QueryOperator {
      * iterator
      */
     public Run sortRun(Iterator<Record> records) {
-        // TODO(proj3_part1): implement
-        return null;
+        List<Record> listOfRecords = new ArrayList<>();
+        while (records.hasNext()) {
+            listOfRecords.add(records.next());
+        }
+        listOfRecords.sort(this.comparator);
+        Run runToReturn = makeRun(listOfRecords);
+        return runToReturn;
     }
 
     /**
      * Given a list of sorted runs, returns a new run that is the result of
      * merging the input runs. You should use a Priority Queue (java.util.PriorityQueue)
-     * to determine which record should be should be added to the output run
+     * to determine which record should be added to the output run
      * next.
      *
      * You are NOT allowed to have more than runs.size() records in your
@@ -107,8 +112,41 @@ public class SortOperator extends QueryOperator {
      */
     public Run mergeSortedRuns(List<Run> runs) {
         assert (runs.size() <= this.numBuffers - 1);
-        // TODO(proj3_part1): implement
-        return null;
+
+        List<Record> sortedList = new ArrayList<>();
+        PriorityQueue<Pair<Record, Integer>> PQ = new PriorityQueue<>(new RecordPairComparator());
+        List<Iterator<Record>> iteratorList = new ArrayList<>();
+
+        //traverse the runs and create an iterator for each run (add the iterators to the
+        // iterator list,
+        // and add the first record of each run to the priority queue
+        //as a Pair<Record, i>
+        for (int i = 0; i < runs.size(); i++) {
+            Iterator<Record> runI = runs.get(i).iterator();
+            iteratorList.add(runI);
+            if (runI.hasNext()) {
+                Pair<Record, Integer> firstRecord = new Pair<>(runI.next(), i);
+                PQ.add(firstRecord);
+            }
+        }
+        //pop the first element in the queue, get the first item and added to the sorted run list
+        //get the second element to know which iterator to access and which record add to the queue
+        while (!PQ.isEmpty()) {
+            Pair<Record, Integer> temp = PQ.poll();
+            Record sortedRecord = temp.getFirst();
+            int iteratorIndex = temp.getSecond();
+            sortedList.add(sortedRecord);
+
+            //if there are more items in the iterator we just dequeued, keep yielding.
+            if (iteratorList.get(iteratorIndex).hasNext()) { //selecting the iterator from which we need to add to the queue
+                PQ.add(new Pair<>(iteratorList.get(iteratorIndex).next(), iteratorIndex));//yielding record from iterator and adding it as a pair to the queue
+            }
+        }
+
+        //create a run of the sortedList
+        Run sortedRun = makeRun();
+        sortedRun.addAll(sortedList);
+        return sortedRun;
     }
 
     /**
@@ -132,8 +170,30 @@ public class SortOperator extends QueryOperator {
      * @return a list of sorted runs obtained by merging the input runs
      */
     public List<Run> mergePass(List<Run> runs) {
-        // TODO(proj3_part1): implement
-        return Collections.emptyList();
+
+        List<Run> sortedRuns = new ArrayList<>();
+        int buffersAvailable = (this.numBuffers - 1);
+        int numPartitions = (int) Math.floor(runs.size() / buffersAvailable);
+        int leftOver = (int) runs.size() % buffersAvailable;
+        int lowerBound = 0;
+        int upperBound = buffersAvailable;
+
+        //evenly partitioned runs
+        for (int i = 0; i < numPartitions; i++) {
+            List<Run> runGroup = runs.subList(lowerBound, upperBound); //+1 bc it is exclusive
+            lowerBound+=buffersAvailable;
+            upperBound+=buffersAvailable;
+            Run sortedGroup = mergeSortedRuns(runGroup);
+            sortedRuns.add(sortedGroup);
+        }
+        //possibly uneven partition
+        for (int i = 0; i < leftOver; i++) {
+            List<Run> runGroup = runs.subList(lowerBound, upperBound - 1);
+            lowerBound+=buffersAvailable;
+            upperBound+=buffersAvailable;
+            sortedRuns.add(mergeSortedRuns(runGroup));
+        }
+        return sortedRuns;
     }
 
     /**
@@ -147,9 +207,22 @@ public class SortOperator extends QueryOperator {
     public Run sort() {
         // Iterator over the records of the relation we want to sort
         Iterator<Record> sourceIterator = getSource().iterator();
+        BacktrackingIterator<Record> recordIterator;
+        List<Run> sortedRuns = new ArrayList<>();
+        int numPages = getSource().estimateStats().getNumPages();
 
-        // TODO(proj3_part1): implement
-        return makeRun(); // TODO(proj3_part1): replace this!
+        //phase 1: create sorted runs
+        while (sourceIterator.hasNext()) {
+            recordIterator = getBlockIterator(sourceIterator, getSource().getSchema(), this.numBuffers);
+            Run sortedRun = sortRun(recordIterator);
+            sortedRuns.add(sortedRun);
+        }
+
+        //phase 2: merge sorted runs
+        while (sortedRuns.size() > 1) {
+            sortedRuns = mergePass(sortedRuns);
+        }
+        return sortedRuns.get(0);
     }
 
     /**
@@ -169,4 +242,3 @@ public class SortOperator extends QueryOperator {
         return run;
     }
 }
-
