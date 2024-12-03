@@ -9,6 +9,7 @@ import edu.berkeley.cs186.database.query.QueryOperator;
 import edu.berkeley.cs186.database.query.SortOperator;
 import edu.berkeley.cs186.database.table.Record;
 
+import javax.xml.crypto.Data;
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
@@ -143,30 +144,47 @@ public class SortMergeOperator extends JoinOperator {
             if (leftRecord == null) {
                 return null;
             }
-            if (rightRecord != null) {
-                if (compare(leftRecord, rightRecord) == 0) {
-                    return leftRecord.concat(rightRecord);
-                }
-            }
-            while (true) {
-                if (rightIterator.hasNext()) {
-                    rightRecord = rightIterator.next();
-                    if (compare(leftRecord, rightRecord) == 0) {
-                        Record s = leftRecord.concat(rightRecord);
-                        //rightRecord = rightIterator.next();
-                        leftRecord = leftIterator.next();
-                        return s;
+//            if (rightRecord == null) {
+//                rightIterator.reset();
+//                rightIterator.markNext();
+//                this.rightRecord = rightIterator.next();
+//            }
+            do {
+                if (!marked) {
+                    while (compare(leftRecord, rightRecord) < 0) {
+                        if (leftIterator.hasNext()) {
+                            leftRecord = leftIterator.next();
+                        }
                     }
-                } else if (leftIterator.hasNext()) {
-                    leftRecord = leftIterator.next();
-                    rightIterator.reset();
+                    while (compare(leftRecord, rightRecord) > 0) {
+                        if (rightIterator.hasNext()) {
+                            rightRecord = rightIterator.next();
+                        }
+                    }
                     rightIterator.markNext();
-                    this.marked = true;
-                    //if (rightIterator.hasNext()) {rightRecord = rightIterator.next();}
-                } else {
-                    return null;
+                    marked = true;
                 }
-            }
+                if (compare(leftRecord, rightRecord) == 0) {
+                    nextRecord = leftRecord.concat(rightRecord);
+                    //rightIterator.markPrev();
+                    if (rightIterator.hasNext()) {
+                        //rightIterator.reset();
+                        //rightIterator.markNext();
+                        rightRecord = rightIterator.next();
+                    }
+                    return nextRecord;
+                } else {
+                    if (leftIterator.hasNext()) {
+                        leftRecord = leftIterator.next();
+                    }
+                    rightIterator.reset();
+                    rightIterator.markPrev();
+                    rightRecord = rightIterator.next();
+                    marked = false;
+                }
+
+            } while (!hasNext());
+            return nextRecord;
         }
 
         @Override
